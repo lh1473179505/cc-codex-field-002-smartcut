@@ -4,8 +4,10 @@ import argparse
 import json
 import sys
 
+from cutkit.errors import CutkitError
 from cutkit.probe import ProbeError, container, keyframe_pts
-from cutkit.timecode import TimeParseError, parse_time, seconds_as_float
+from cutkit.smartcut import smart_cut
+from cutkit.timecode import TimeParseError, parse_time
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     cut_cmd = sub.add_parser(
         "smart-cut",
-        help="GOP-aware, frame-accurate cut (not implemented yet)",
+        help="GOP-aware, frame-accurate cut",
     )
     cut_cmd.add_argument("--input", "-i", required=True, help="Source media file")
     cut_cmd.add_argument("--start", required=True, help="Window start, e.g. 4/3 or 00:00:01.333")
@@ -49,16 +51,21 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def cmd_smart_cut(args: argparse.Namespace) -> int:
-    # Validate times early so a typo fails fast; the cut itself is still TODO.
     start = parse_time(args.start)
     duration = parse_time(args.duration)
     if duration <= 0:
         raise TimeParseError("duration must be positive")
-    _ = (start, args.input, args.output, args.qc, args.subtitles)
-    raise NotImplementedError(
-        "smart-cut is not implemented in this snapshot. "
-        f"Parsed start={seconds_as_float(start)}s duration={seconds_as_float(duration)}s"
+    report = smart_cut(
+        input_path=args.input,
+        start=start,
+        duration=duration,
+        output_path=args.output,
+        qc_path=args.qc,
+        subtitles_path=args.subtitles,
     )
+    json.dump(report, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "smart-cut":
             return cmd_smart_cut(args)
         parser.error(f"unknown command: {args.cmd}")
-    except (ProbeError, TimeParseError, NotImplementedError, FileNotFoundError) as exc:
+    except (CutkitError, ProbeError, TimeParseError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
